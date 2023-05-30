@@ -1,0 +1,137 @@
+---
+title: "Untitled"
+author: "cliffbeall"
+date: '2023-02-15'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+```
+
+## Resequencing of GP Samples
+
+These are from the study of oral bacteria from infants in the NICU. Shahr resequenced the old DNA preps with Illumina MiSeq 
+
+Here are the shell commands I used to download and run the pipeline.
+
+```{bash eval=FALSE}
+
+mkdir 2023_02_GP
+cd 2023_02_GP/
+bs list project
+bs download project -i 380636585 -o . --extension=fastq.gz
+mkdir 2023_02_GP
+cd 2023_02_GP/
+mkdir mothur_blast
+cd mothur_blast
+nohup /Volumes/GriffenLeysLab/zShared/Scripts_dbs/./16s_mothur_new.sh \
+  /Volumes/GLLab_new_share/zShared/sequence_data/MiSeq/2023_02_GP \
+  2023_GP 12 &
+# Next day:
+cd cd /Volumes/GLLab_new_share/Cliff/2023_02_GP/mothur_blast/blast/
+python /Volumes/GriffenLeysLab/zShared/Scripts_dbs/./sum_to_taxa4.py \
+  2023_GP.q28.fasta.sum \
+  /Volumes/GriffenLeysLab/zShared/Scripts_dbs/core_vag_fm_taxonomy_2020_01_06.tab \
+  ../2023_GP.q28.groups \
+  2023_GP_BLAST_TABLE.txt
+# Output
+#Total reads:  10267900
+#Matches over 98%:  6463021
+#Percentage w. matches: % 62.9439417992
+# In Windows command prompt:
+set PATH=C:\Program Files\PuTTY;%PATH%
+pscp -scp leyslab@140.254.150.104:/Volumes/GLLab_new_share/Cliff/2023_02_GP/mothur_blast/blast/2023_GP_BLAST_TABLE.txt C:\Users\beall.3\Downloads\
+```
+
+I looked for metadata in Zach's folder on the GriffenLeysLab shared area. He had a folder called GP that had a file called "clinical". I copied it and renamed it "clinical.txt". It has a bunch of data though noticeably not dates.
+
+## Load Data into R
+
+From looking at charts, families 121 and 122 should be excluded.
+
+```{r}
+blast_gp_2023 <- read_tsv(
+                          file = "2023_GP_BLAST_TABLE.txt",
+                          col_names = c("Contig_id", "Match_accno", "Sample", "Kingdom", "Phylum",
+                                        "Class", "Order", "Family", "Genus", "Species"),
+                          skip = 1
+                          )
+gp_2023_spec_counts <- blast_gp_2023 %>%
+  group_by(Sample, Species) %>%
+  summarize(count = n()) %>%
+  filter(!grepl("NEG|POS", Sample)) %>%
+  pivot_wider(names_from = Species, values_from = count, values_fill = 0) %>%
+  filter(!grepl("GP121|GP122", Sample))
+gp_2023_controls <- blast_gp_2023 %>%
+  group_by(Sample, Species) %>%
+  summarize(count = n()) %>%
+  filter(grepl("NEG|POS", Sample)) %>%
+  pivot_wider(names_from = Species, values_from = count, values_fill = 0)
+rm(blast_gp_2023)
+```
+
+## Plot the Controls
+
+```{r}
+gp_controls_mat <- as.matrix(gp_2023_controls[, -1])
+rownames(gp_controls_mat) <- gp_2023_controls$Sample
+gp_controls_mat <- gp_controls_mat[, order(colSums(gp_controls_mat), decreasing = TRUE)]
+gp_controls_gg <- as_tibble(data.frame(Sample = rownames(gp_controls_mat),
+                                       gp_controls_mat[, 1:13],
+                                       Other = rowSums(gp_controls_mat[, 14:ncol(gp_controls_mat)])
+                                       ))
+gp_controls_gg %>%
+  pivot_longer(cols = -Sample, names_to = "Species") %>%
+  ggplot() +
+    geom_col(mapping = aes(x = Sample, y = value, fill = Species)) +
+    labs(title = "Control Samples GP Study 2023", y = "Counts") +
+    theme(axis.text.x = element_text(angle = 45, vjust =1, hjust = 1))
+```
+
+## Sequences per Sample
+
+
+
+## Set up Metadata
+ 
+I found a file called Zach/GP/clinical that is a tab-separated version of the metadata for the old experiment. It didn't have every sample but we should be able to fill stuff in from other samples. I copied it and renamed it clinical.txt
+
+I noticed that we had sequenced 246 samples but there were only 198 in the old metadata. So look at what is different, to allow this do some modifications of the sample names regarding presence of periods and capitalizaton.
+
+```{r}
+gp_meta_partial <- read_tsv("clinical.txt", 
+                            col_names = TRUE,
+                            col_types = "cccccccccccc"
+                            ) %>%
+  mutate(sample = str_replace(sample, "\\.*[bB]\\.*", "b")) %>%
+  mutate(sample = str_replace(sample, "\\.*[mM]\\.*", "m"))
+"Names that are in the new data, not the old:"
+gp_2023_spec_counts$Sample[!(gp_2023_spec_counts$Sample %in% gp_meta_partial$sample)]
+"Names in the old, not the new:"
+gp_meta_partial$sample[!(gp_meta_partial$sample %in% gp_2023_spec_counts$Sample)]
+
+```
+
+Looking at those outputs it appears there are a large number of m2 samples and a few m3 that were not in the older data. Families 121 and 122 were also not in the older data. Meanwhile family 203 is in the older data (without b3 sample) but not the newer. The old data had 19 families in each group while the new has 21 and 18, I don't think that really matters.
+
+I found a file with family-level info that I can use to fill in a metadata table for the newly sequenced stuff except for 121 and 122. It is called filemaker_export_fixed.txt - the rest of the info I should be able to pull out of the sample names.
+
+```{r}
+meta_by_fam <- read_tsv(file = "Stuff_from_GLLab/filemaker_export_fixed.txt",
+                        col_names = TRUE,
+                        col_types = "ccccccc"
+                        )
+ 
+gp_2023_meta <- tibble(Sample = gp_2023_spec_counts$Sample,
+                       Family = str_sub(gp_2023_spec_counts$Sample, 1, 5),
+                       Age = ifelse(str_detect(gp_2023_spec_counts$Sample, "b"), "Baby", "Mom"),
+                       Visit = str_match(gp_2023_spec_counts$Sample, "([1-3])([AB])*$")[, 2],
+                       Location = ifelse(str_detect(gp_2023_spec_counts$Sample, "^GP1"), "Home", "NICU"))
+gp_2023_meta <- left_join(gp_2023_meta, meta_by_fam, by = c("Family" = "Sample"))
+# save(gp_2023_spec_counts, gp_2023_meta, file = "gp_counts_meta.Rdata")
+```
+
+
+

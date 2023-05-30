@@ -1,0 +1,55 @@
+---
+title: "GP Redo of Powerpoint"
+author: "cliffbeall"
+date: '2023-05-03'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(vegan)
+```
+
+## 
+
+```{r }
+load("gp_counts_meta.Rdata")
+set.seed(3658)
+nmds_baby_all <- gp_2023_spec_counts[, -1] %>%
+  filter(gp_2023_meta$Age == "Baby") %>%
+  decostand(method = "total") %>%
+  metaMDS(trymax = 200, autotransform = FALSE)
+  baby_nmds_gg_df <- cbind(gp_2023_meta[gp_2023_meta$Age == "Baby", ],
+                 scores(nmds_baby_all, display = "sites")
+                 )
+
+
+nmds_by_visit <- function(visit){
+  baby_nmds_gg_df %>%
+    filter(Visit == visit) %>%
+      ggplot(aes(x = NMDS1, y = NMDS2, color = Location)) +
+        geom_point() +
+        coord_fixed(xlim = c(-1, 3), ylim = c(-2, 2.6)) +
+        scale_color_manual(values = c("blue2", "red")) +
+        labs(title = str_c("Visit ", visit, collapse = ""))
+}
+nmds_by_visit("1")
+nmds_by_visit("2")
+nmds_by_visit("3")
+babyv1 <- gp_2023_meta$Age == "Baby" & gp_2023_meta$Visit == "1"
+babyv2 <- gp_2023_meta$Age == "Baby" & gp_2023_meta$Visit == "2"
+babyv3 <- gp_2023_meta$Age == "Baby" & gp_2023_meta$Visit == "3"
+
+gp_2023_spec_frac <- decostand(gp_2023_spec_counts[, -1], method = "total")
+
+set.seed(3658)
+"PERMANOVA Visit 1"
+adonis(gp_2023_spec_frac[babyv1, ] ~ Location, data = gp_2023_meta[babyv1,])
+"PERMANOVA Visit 2"
+adonis(gp_2023_spec_frac[babyv2, ] ~ Location, data = gp_2023_meta[babyv2,])
+"PERMANOVA Visit 3"
+adonis(gp_2023_spec_frac[babyv3, ] ~ Location, data = gp_2023_meta[babyv3,])
+```
+
+
