@@ -11,7 +11,9 @@ require(tidyverse)
 require(vegan)
 ```
 
-## 
+## NMDS Panels
+
+These are derived from all baby NMDS plot, each panel shows one only the points fomr one time point and compares the NICU and home groups. A PERMANOVA was done at each time point. This is slide 4 in the "Neonate for Kyu.pptx" file.
 
 ```{r }
 load("gp_counts_meta.Rdata")
@@ -51,5 +53,43 @@ adonis(gp_2023_spec_frac[babyv2, ] ~ Location, data = gp_2023_meta[babyv2,])
 "PERMANOVA Visit 3"
 adonis(gp_2023_spec_frac[babyv3, ] ~ Location, data = gp_2023_meta[babyv3,])
 ```
+
+The PERMANOVA results are very similar to the previous, NMDSs don't look quite the same.
+
+## Cesarean vs. Vaginal 3 month
+
+This is to reproduce slide 7 of the powerpoint.
+
+```{r}
+set.seed(3658)
+bb3mo <- gp_2023_meta$Age == "Baby" & gp_2023_meta$Visit == "3"
+gp_3mo_baby_nmds <- gp_2023_spec_frac %>%
+  filter(bb3mo) %>%
+  as.matrix() %>%
+  metaMDS(trymax = 200, autotransform = FALSE)
+gp_3mo_baby_gg <- gp_2023_meta %>%
+  filter(bb3mo) %>%
+  cbind(scores(gp_3mo_baby_nmds, display = "sites"))
+ggplot(gp_3mo_baby_gg, aes(x = NMDS1, y = NMDS2, color = Delivery)) +
+  geom_point() +
+  coord_fixed() +
+  scale_color_manual(values = c("orange", "green4"))
+
+adonis(gp_2023_spec_frac[bb3mo, ] ~ gp_2023_meta$Delivery[bb3mo])
+```
+
+## Breast vs. Formula Feeding
+
+NMDS with PERMANOVA and Shannon. To reproduce Slide 8 of the powerpoint.
+
+```{r}
+ggplot(gp_3mo_baby_gg, aes(x = NMDS1, y = NMDS2, color = Breastfeeding)) +
+  geom_point() +
+  coord_fixed() +
+  scale_color_manual(values = c("black", "hotpink", "purple", "brown"))
+adonis(gp_2023_spec_frac[bb3mo, ] ~ gp_2023_meta$Breastfeeding[bb3mo])
+```
+
+
 
 
